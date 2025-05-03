@@ -3,7 +3,6 @@ package handlers
 import (
 	"backend/generated/sqlc"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/bcrypt"
 	"net/http"
@@ -38,20 +37,17 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		return err
 	}
 
-	v7, err := uuid.NewV7()
+	id, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
 
 	err = h.DB.CreateUser(c.Request().Context(), sqlc.CreateUserParams{
-		ID:       v7,
+		ID: id,
 		Username: request.Username,
 		Email:    request.Email,
 		Password: password,
-		CreatedAtUtc: pgtype.Timestamptz{
-			Time:  time.Now().UTC(),
-			Valid: true,
-		},
+		CreatedAtUtc: time.Now().UTC(),
 	})
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error()).SetInternal(err)
@@ -59,5 +55,5 @@ func (h *Handler) CreateUser(c echo.Context) error {
 
 	c.Logger().Infof("Added new user: %v", request.Username)
 
-	return c.String(http.StatusOK, v7.String())
+	return c.String(http.StatusCreated, id.String())
 }

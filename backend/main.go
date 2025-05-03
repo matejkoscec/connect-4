@@ -1,7 +1,6 @@
 package main
 
 import (
-	"backend/generated/sqlc"
 	"backend/handlers"
 	"context"
 	"errors"
@@ -33,9 +32,7 @@ func run(e *echo.Echo) error {
 	}
 	defer dbpool.Close()
 
-	handlers.Configure(e, &handlers.Handler{
-		DB: sqlc.New(dbpool),
-	})
+	handlers.ConfigureRoutes(e, dbpool)
 
 	e.Validator = &RequestValidator{validator.New()}
 
