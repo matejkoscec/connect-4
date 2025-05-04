@@ -10,11 +10,11 @@ import (
 )
 
 type findLobbyRequest struct {
-	PlayerId string  `json:"player_id,omitempty" validate:"required,uuid"`
+	PlayerId string `json:"playerId,omitempty" validate:"required,uuid"`
 }
 
 type FindLobbyResponse struct {
-	LobbyId string `json:"lobby_id,omitempty"`
+	LobbyId string `json:"lobbyId,omitempty"`
 }
 
 func (h *Handler) FindLobby(c echo.Context) error {
@@ -36,16 +36,16 @@ func (h *Handler) FindLobby(c echo.Context) error {
 	defer tx.Rollback(ctx)
 	qtx := h.DB.WithTx(tx)
 
-	lobbyId, notFound := qtx.GetFirstFreeLobby(ctx)
+	playerId, err := uuid.Parse(request.PlayerId)
+	if err != nil {
+		return err
+	}
+	lobbyId, notFound := qtx.GetFirstFreeLobby(ctx, playerId)
 	if notFound == nil {
 		return c.JSON(http.StatusOK, FindLobbyResponse{lobbyId.String()})
 	}
 
 	lobbyId, err = uuid.NewV7()
-	if err != nil {
-		return err
-	}
-	playerId, err := uuid.Parse(request.PlayerId)
 	if err != nil {
 		return err
 	}

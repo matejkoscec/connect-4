@@ -1,13 +1,14 @@
 package main
 
 import (
+	"backend/config"
 	"backend/handlers"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/gommon/log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,24 +23,30 @@ func main() {
 }
 
 func run(e *echo.Echo) error {
-	e.Logger.SetLevel(log.INFO)
+	cfg, err := config.LoadConfig(e.Logger)
+	if err != nil {
+		return err
+	}
+
+	e.Logger.SetLevel(cfg.App.Logger.Level.Lvl())
+	e.Validator = &RequestValidator{validator.New()}
+	e.Logger.Info(cfg)
 
 	bgContext := context.Background()
 
-	dbpool, err := pgxpool.New(bgContext, os.Getenv("DB_URL"))
+	dbpool, err := pgxpool.New(bgContext, cfg.App.DB.URL)
 	if err != nil {
-		e.Logger.Fatal(err)
+		return err
 	}
 	defer dbpool.Close()
 
-	handlers.ConfigureRoutes(e, dbpool)
-
-	e.Validator = &RequestValidator{validator.New()}
+	handlers.ConfigureRoutes(e, cfg, dbpool)
 
 	ctx, stop := signal.NotifyContext(bgContext, os.Interrupt)
 	defer stop()
 	go func() {
-		if err := e.Start(":8080"); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		port := fmt.Sprintf(":%d", cfg.App.Port)
+		if err := e.Start(port); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			e.Logger.Fatal("shutting down the server")
 		}
 	}()

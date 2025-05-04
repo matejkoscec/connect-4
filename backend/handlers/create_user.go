@@ -43,10 +43,10 @@ func (h *Handler) CreateUser(c echo.Context) error {
 	}
 
 	err = h.DB.CreateUser(c.Request().Context(), sqlc.CreateUserParams{
-		ID: id,
-		Username: request.Username,
-		Email:    request.Email,
-		Password: password,
+		ID:           id,
+		Username:     request.Username,
+		Email:        request.Email,
+		Password:     password,
 		CreatedAtUtc: time.Now().UTC(),
 	})
 	if err != nil {

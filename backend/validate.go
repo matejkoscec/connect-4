@@ -11,8 +11,7 @@ type RequestValidator struct {
 }
 
 func (v *RequestValidator) Validate(i interface{}) error {
-	err := v.validator.Struct(i)
-	if err != nil {
+	if err := v.validator.Struct(i); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
 	}
 
