@@ -9,14 +9,14 @@ import (
 	"time"
 )
 
-type CreateUserRequest struct {
+type createUserRequest struct {
 	Username string `json:"username,omitempty" validate:"required"`
 	Email    string `json:"email,omitempty" validate:"required,email"`
 	Password string `json:"password,omitempty" validate:"required"`
 }
 
 func (h *Handler) CreateUser(c echo.Context) error {
-	var request CreateUserRequest
+	var request createUserRequest
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
 	}

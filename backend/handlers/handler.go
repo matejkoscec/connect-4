@@ -34,4 +34,5 @@ func ConfigureRoutes(e *echo.Echo, pool *pgxpool.Pool) {
 
 	lobbies := apiV1.Group("/lobbies")
 	lobbies.POST("", h.CreateLobby)
+	lobbies.GET("/find", h.FindLobby)
 }

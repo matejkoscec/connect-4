@@ -3,21 +3,22 @@ package handlers
 import (
 	"backend/generated/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 	"net/http"
 	"time"
 )
 
-type createLobbyRequest struct {
-	CreatorId string `json:"creator_id,omitempty" validate:"required,uuid"`
+type findLobbyRequest struct {
+	PlayerId string  `json:"player_id,omitempty" validate:"required,uuid"`
 }
 
-type CreateLobbyResponse struct {
-	LobbyId string
+type FindLobbyResponse struct {
+	LobbyId string `json:"lobby_id,omitempty"`
 }
 
-func (h *Handler) CreateLobby(c echo.Context) error {
-	var request createLobbyRequest
+func (h *Handler) FindLobby(c echo.Context) error {
+	var request findLobbyRequest
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
 	}
@@ -26,32 +27,33 @@ func (h *Handler) CreateLobby(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	tx, err := h.BeginTx(ctx)
+	tx, err := h.BeginTxWithOpts(ctx, pgx.TxOptions{
+		IsoLevel: pgx.Serializable,
+	})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 	qtx := h.DB.WithTx(tx)
 
-	p1Id, err := uuid.Parse(request.CreatorId)
-	if err != nil {
-		return err
-	}
-
-	_, notFound := qtx.GetUserById(ctx, p1Id)
+	lobbyId, notFound := qtx.GetFirstFreeLobby(ctx)
 	if notFound == nil {
-		return echo.NewHTTPError(http.StatusConflict, "User already has an active lobby")
+		return c.JSON(http.StatusOK, FindLobbyResponse{lobbyId.String()})
 	}
 
-	lobbyId, err := uuid.NewV7()
+	lobbyId, err = uuid.NewV7()
 	if err != nil {
 		return err
 	}
+	playerId, err := uuid.Parse(request.PlayerId)
+	if err != nil {
+		return err
+	}
+
 	err = qtx.CreateLobby(ctx, sqlc.CreateLobbyParams{
 		ID:           lobbyId,
-		Player1ID:    p1Id,
+		Player1ID:    playerId,
 		CreatedAtUtc: time.Now().UTC(),
-		IsPrivate:    true,
 	})
 	if err != nil {
 		return err
@@ -62,5 +64,5 @@ func (h *Handler) CreateLobby(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusCreated, CreateLobbyResponse{lobbyId.String()})
+	return c.JSON(http.StatusOK, FindLobbyResponse{lobbyId.String()})
 }
