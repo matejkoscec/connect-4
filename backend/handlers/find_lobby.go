@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type findLobbyRequest struct {
+type FindLobbyRequest struct {
 	PlayerId string `json:"playerId,omitempty" validate:"required,uuid"`
 }
 
@@ -18,16 +18,16 @@ type FindLobbyResponse struct {
 }
 
 func (h *Handler) FindLobby(c echo.Context) error {
-	var request findLobbyRequest
+	var request FindLobbyRequest
 	if err := c.Bind(&request); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
+		return err
 	}
 	if err := c.Validate(request); err != nil {
 		return err
 	}
 
 	ctx := c.Request().Context()
-	tx, err := h.BeginTxWithOpts(ctx, pgx.TxOptions{
+	tx, err := h.Conn.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel: pgx.Serializable,
 	})
 	if err != nil {

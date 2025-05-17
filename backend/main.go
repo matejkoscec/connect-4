@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,10 +29,16 @@ func run(e *echo.Echo) error {
 	if err != nil {
 		return err
 	}
+	fmt.Print(cfg.PrettyString())
 
-	e.Logger.SetLevel(cfg.App.Logger.Level.Lvl())
+	e.Logger.SetLevel(cfg.App.Logger.Level.Lvl)
 	e.Validator = &RequestValidator{validator.New()}
-	e.Logger.Info(cfg)
+
+	e.Use(middleware.CORS())
+	e.Use(middleware.Logger())
+	e.Use(echojwt.WithConfig(echojwt.Config{
+		SigningKey: []byte(cfg.App.Security.JwtSecret),
+	}))
 
 	bgContext := context.Background()
 

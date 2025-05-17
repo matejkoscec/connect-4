@@ -10,21 +10,25 @@ import (
 	"time"
 )
 
-type loginUserRequest struct {
+type LoginUserRequest struct {
 	Username string `json:"username,omitempty" validate:"required"`
 	Password string `json:"password,omitempty" validate:"required"`
 }
 
+type LoginUserResponse struct {
+	Token string `json:"token"`
+}
+
 type UserClaims struct {
-	UserID   uuid.UUID `json:"user_id"`
+	UserID   uuid.UUID `json:"userId"`
 	Username string    `json:"username"`
 	jwt.RegisteredClaims
 }
 
 func (h *Handler) LoginUser(c echo.Context) error {
-	var request loginUserRequest
+	var request LoginUserRequest
 	if err := c.Bind(&request); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
+		return err
 	}
 	if err := c.Validate(request); err != nil {
 		return err
@@ -32,11 +36,11 @@ func (h *Handler) LoginUser(c echo.Context) error {
 
 	user, notFound := h.DB.GetUserByUsername(c.Request().Context(), request.Username)
 	if notFound != nil {
-		return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("User with username %s not found", request.Username))
+		return echo.NewHTTPError(http.StatusNotFound, fmt.Sprintf("user with username %s not found", request.Username))
 	}
 
 	if err := bcrypt.CompareHashAndPassword(user.Password, []byte(request.Password)); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Username or password is incorrect")
+		return echo.NewHTTPError(http.StatusBadRequest, "username or password is incorrect")
 	}
 
 	claims := UserClaims{
@@ -57,5 +61,5 @@ func (h *Handler) LoginUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to sign token").SetInternal(err)
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{"token": signedToken})
+	return c.JSON(http.StatusOK, LoginUserResponse{signedToken})
 }

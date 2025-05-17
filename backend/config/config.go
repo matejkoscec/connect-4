@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/kelseyhightower/envconfig"
@@ -13,8 +14,6 @@ import (
 
 type Config struct {
 	App AppConfig
-
-	fileName string `envconfig:"CONFIG_FILE"`
 }
 
 type AppConfig struct {
@@ -36,75 +35,45 @@ type LoggerConfig struct {
 	Level LogLevel
 }
 
-type LogLevel log.Lvl
-
-func (lvl *LogLevel) Lvl() log.Lvl {
-	return log.Lvl(*lvl)
+type LogLevel struct {
+	log.Lvl
 }
 
-func (lvl *LogLevel) UnmarshalYAML(node *yaml.Node) error {
-	value := strings.ToUpper(node.Value)
-	switch value {
-	case "DEBUG":
-		*lvl = LogLevel(log.DEBUG)
-		return nil
-	case "INFO":
-		*lvl = LogLevel(log.INFO)
-		return nil
-	case "WARN":
-		*lvl = LogLevel(log.WARN)
-		return nil
-	case "ERROR":
-		*lvl = LogLevel(log.ERROR)
-		return nil
-	case "OFF":
-		*lvl = LogLevel(log.OFF)
-		return nil
-	}
+const DefaultFileName = "config.yaml"
 
-	return errors.New(fmt.Sprintf("unknown log level '%s'", node.Value))
-}
-
-func Default() *Config {
-	return &Config{
-		App: AppConfig{
-			Port: 8080,
-			DB: DBConfig{
-				URL: "",
-			},
-			Security: SecurityConfig{
-				JwtSecret: "",
-			},
-			Logger: LoggerConfig{
-				Level: LogLevel(log.INFO),
-			},
+var DefaultConfig = &Config{
+	App: AppConfig{
+		Port: 8080,
+		DB: DBConfig{
+			URL: "",
 		},
-
-		fileName: "config.yaml",
-	}
+		Security: SecurityConfig{
+			JwtSecret: "",
+		},
+		Logger: LoggerConfig{
+			Level: LogLevel{log.INFO},
+		},
+	},
 }
 
 func LoadConfig(logger echo.Logger) (*Config, error) {
-	cfg := Default()
+	cfg := DefaultConfig
 
 	if err := envconfig.Process("", cfg); err != nil {
 		return nil, err
 	}
-	if err := readFile(cfg); err != nil {
+	if err := cfg.loadFile(); err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
 		logger.Error("Configuration file not found, keeping defaults")
 	}
-	if err := checkRequiredConfigPresent(cfg); err != nil {
-		return nil, err
-	}
 
 	return cfg, nil
 }
 
-func readFile(cfg *Config) error {
-	f, err := os.Open(cfg.fileName)
+func (cfg *Config) loadFile() error {
+	f, err := os.Open(DefaultFileName)
 	if err != nil {
 		return err
 	}
@@ -119,13 +88,32 @@ func readFile(cfg *Config) error {
 	return nil
 }
 
-func checkRequiredConfigPresent(cfg *Config) error {
-	if cfg.App.DB.URL == "" {
-		return errors.New("database URL is empty")
+func (cfg *Config) PrettyString() string {
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return ""
 	}
-	if cfg.App.Security.JwtSecret == "" {
-		return errors.New("JWT secret is empty")
+	return string(b)
+}
+
+func (lvl LogLevel) UnmarshalYAML(node *yaml.Node) error {
+	switch strings.ToUpper(node.Value) {
+	case "DEBUG":
+		lvl.Lvl = log.DEBUG
+		return nil
+	case "INFO":
+		lvl.Lvl = log.INFO
+		return nil
+	case "WARN":
+		lvl.Lvl = log.WARN
+		return nil
+	case "ERROR":
+		lvl.Lvl = log.ERROR
+		return nil
+	case "OFF":
+		lvl.Lvl = log.OFF
+		return nil
 	}
 
-	return nil
+	return errors.New(fmt.Sprintf("unknown log level '%s'", node.Value))
 }

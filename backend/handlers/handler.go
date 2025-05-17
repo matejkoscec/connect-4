@@ -3,33 +3,27 @@ package handlers
 import (
 	"backend/config"
 	"backend/generated/sqlc"
-	"context"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"net/http"
 )
 
 type Handler struct {
 	DB     *sqlc.Queries
 	Config config.Config
-
-	pool *pgxpool.Pool
-}
-
-func (h *Handler) BeginTx(ctx context.Context) (pgx.Tx, error) {
-	return h.pool.Begin(ctx)
-}
-
-func (h *Handler) BeginTxWithOpts(ctx context.Context, options pgx.TxOptions) (pgx.Tx, error) {
-	return h.pool.BeginTx(ctx, options)
+	Conn   *pgxpool.Pool
 }
 
 func ConfigureRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool) {
 	h := &Handler{
 		DB:     sqlc.New(pool),
 		Config: *cfg,
-		pool:   pool,
+		Conn:   pool,
 	}
+
+	e.GET("/health", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
 
 	apiV1 := e.Group("/api/v1")
 

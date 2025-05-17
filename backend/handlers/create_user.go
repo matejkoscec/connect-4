@@ -9,16 +9,20 @@ import (
 	"time"
 )
 
-type createUserRequest struct {
+type CreateUserRequest struct {
 	Username string `json:"username,omitempty" validate:"required"`
 	Email    string `json:"email,omitempty" validate:"required,email"`
 	Password string `json:"password,omitempty" validate:"required"`
 }
 
+type CreateUserResponse struct {
+	Id string `json:"id"`
+}
+
 func (h *Handler) CreateUser(c echo.Context) error {
-	var request createUserRequest
+	var request CreateUserRequest
 	if err := c.Bind(&request); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
+		return err
 	}
 	if err := c.Validate(request); err != nil {
 		return err
@@ -29,7 +33,7 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		Email:    request.Email,
 	})
 	if notFound == nil {
-		return echo.NewHTTPError(http.StatusConflict, "User with that username or email already exists")
+		return echo.NewHTTPError(http.StatusConflict, "user with that username or email already exists")
 	}
 
 	password, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
@@ -50,10 +54,10 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		CreatedAtUtc: time.Now().UTC(),
 	})
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error()).SetInternal(err)
+		return err
 	}
 
-	c.Logger().Infof("Added new user: %v", request.Username)
+	c.Logger().Infof("added new user: %v", request.Username)
 
-	return c.String(http.StatusCreated, id.String())
+	return c.JSON(http.StatusCreated, CreateUserResponse{id.String()})
 }

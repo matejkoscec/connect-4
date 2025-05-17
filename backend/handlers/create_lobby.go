@@ -8,25 +8,25 @@ import (
 	"time"
 )
 
-type createLobbyRequest struct {
-	CreatorId string `json:"creator_id,omitempty" validate:"required,uuid"`
+type CreateLobbyRequest struct {
+	CreatorId string `json:"creatorId,omitempty" validate:"required,uuid"`
 }
 
 type CreateLobbyResponse struct {
-	LobbyId string
+	LobbyId string `json:"lobbyId"`
 }
 
 func (h *Handler) CreateLobby(c echo.Context) error {
-	var request createLobbyRequest
+	var request CreateLobbyRequest
 	if err := c.Bind(&request); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error()).SetInternal(err)
+		return err
 	}
 	if err := c.Validate(request); err != nil {
 		return err
 	}
 
 	ctx := c.Request().Context()
-	tx, err := h.BeginTx(ctx)
+	tx, err := h.Conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (h *Handler) CreateLobby(c echo.Context) error {
 
 	_, notFound := qtx.GetUserById(ctx, p1Id)
 	if notFound == nil {
-		return echo.NewHTTPError(http.StatusConflict, "User already has an active lobby")
+		return echo.NewHTTPError(http.StatusConflict, "user already has an active lobby")
 	}
 
 	lobbyId, err := uuid.NewV7()
