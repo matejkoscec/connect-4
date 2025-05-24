@@ -2,6 +2,8 @@ package main
 
 import (
 	"backend/config"
+	"backend/game"
+	"backend/generated/sqlc"
 	"backend/handlers"
 	"context"
 	"errors"
@@ -36,18 +38,27 @@ func run(e *echo.Echo) error {
 	e.Use(middleware.CORS())
 	e.Use(middleware.Logger())
 
-	bgContext := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
-	dbpool, err := pgxpool.New(bgContext, cfg.App.DB.URL)
+	dbpool, err := pgxpool.New(ctx, cfg.App.DB.URL)
 	if err != nil {
 		return err
 	}
 	defer dbpool.Close()
 
-	handlers.ConfigureRoutes(e, cfg, dbpool)
+	gameCache := game.NewDefaultCache(e.Logger)
+	h := &handlers.Handler{
+		DB:        sqlc.New(dbpool),
+		Config:    *cfg,
+		Conn:      dbpool,
+		GameCache: gameCache,
+		BaseCtx:   ctx,
+	}
 
-	ctx, stop := signal.NotifyContext(bgContext, os.Interrupt)
-	defer stop()
+	handlers.ConfigureRoutes(h, e)
+	go gameCache.RunMatchmaking(ctx)
+
 	go func() {
 		port := fmt.Sprintf(":%d", cfg.App.Port)
 		if err := e.Start(port); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -56,9 +67,9 @@ func run(e *echo.Echo) error {
 	}()
 
 	<-ctx.Done()
-	ctx, cancel := context.WithTimeout(bgContext, 10*time.Second)
+	sdCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err = e.Shutdown(ctx); err != nil {
+	if err = e.Shutdown(sdCtx); err != nil {
 		return err
 	}
 

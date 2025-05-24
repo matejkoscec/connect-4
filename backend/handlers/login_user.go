@@ -43,7 +43,7 @@ func (h *Handler) LoginUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "username or password is incorrect")
 	}
 
-	claims := UserClaims{
+	claims := &UserClaims{
 		user.ID,
 		user.Username,
 		jwt.RegisteredClaims{

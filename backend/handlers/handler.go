@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"backend/config"
+	"backend/game"
 	"backend/generated/sqlc"
+	"context"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
@@ -10,18 +13,14 @@ import (
 )
 
 type Handler struct {
-	DB     *sqlc.Queries
-	Config config.Config
-	Conn   *pgxpool.Pool
+	DB        *sqlc.Queries
+	Config    config.Config
+	Conn      *pgxpool.Pool
+	GameCache *game.Cache
+	BaseCtx   context.Context
 }
 
-func ConfigureRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool) {
-	h := &Handler{
-		DB:     sqlc.New(pool),
-		Config: *cfg,
-		Conn:   pool,
-	}
-
+func ConfigureRoutes(h *Handler, e *echo.Echo) {
 	e.GET("/health", func(c echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
@@ -32,10 +31,13 @@ func ConfigureRoutes(e *echo.Echo, cfg *config.Config, pool *pgxpool.Pool) {
 	auth.POST("/register", h.CreateUser)
 	auth.POST("/login", h.LoginUser)
 
-	lobbies := apiV1.Group("/lobbies")
-	lobbies.Use(echojwt.WithConfig(echojwt.Config{
-		SigningKey: []byte(cfg.App.Security.JwtSecret),
-	}))
-	lobbies.POST("", h.CreateLobby)
-	lobbies.GET("/find", h.FindLobby)
+	jwtMiddleware := echojwt.WithConfig(echojwt.Config{
+		SigningKey: []byte(h.Config.App.Security.JwtSecret),
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(UserClaims)
+		},
+	})
+
+	games := apiV1.Group("/games", jwtMiddleware)
+	games.GET("/play/ws", h.PlayGame)
 }
