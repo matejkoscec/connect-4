@@ -1,6 +1,7 @@
 package message
 
 import (
+	"backend/game"
 	"encoding/json"
 	"fmt"
 	"github.com/coder/websocket"
@@ -34,6 +35,7 @@ func (e Error) Error() string {
 }
 
 const TypeError = "error"
+
 type ErrorPayload struct {
 	Code           websocket.StatusCode `json:"code"`
 	Err            string               `json:"err,omitempty"`
@@ -70,15 +72,37 @@ func NewV1[T any](typ string, payload T) (Message, error) {
 }
 
 const TypeWaitingForGame = "waitingForGame"
+
 type WaitingForGamePayload struct{}
 
 const TypeFoundGame = "foundGame"
+
 type FoundGamePayload struct {
 	LobbyId string `json:"lobbyId"`
 }
 
-const TypeChatMessage = "chatMessage"
+const TypeChat = "chatMessage"
+
 type ChatMessagePayload struct {
 	From string `json:"from"`
 	Text string `json:"text"`
+}
+
+const TypePlayMove = "playMove"
+
+type PlayMovePayload struct {
+	Column uint8
+}
+
+const TypePlayedMove = "playedMove"
+
+type PlayedMovePayload struct {
+	Color  game.Color
+	Column uint8
+}
+
+const TypeGameOver = "gameOver"
+
+type GameOverPayload struct {
+	Winner game.Color
 }

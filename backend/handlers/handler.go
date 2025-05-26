@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"backend/cache"
 	"backend/config"
-	"backend/game"
 	"backend/generated/sqlc"
 	"context"
 	"github.com/golang-jwt/jwt/v5"
@@ -16,7 +16,7 @@ type Handler struct {
 	DB        *sqlc.Queries
 	Config    config.Config
 	Conn      *pgxpool.Pool
-	GameCache *game.Cache
+	GameCache *cache.Cache
 	BaseCtx   context.Context
 }
 

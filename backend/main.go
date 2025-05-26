@@ -1,8 +1,8 @@
 package main
 
 import (
+	"backend/cache"
 	"backend/config"
-	"backend/game"
 	"backend/generated/sqlc"
 	"backend/handlers"
 	"context"
@@ -47,7 +47,7 @@ func run(e *echo.Echo) error {
 	}
 	defer dbpool.Close()
 
-	gameCache := game.NewDefaultCache(e.Logger)
+	gameCache := cache.NewDefaultCache()
 	h := &handlers.Handler{
 		DB:        sqlc.New(dbpool),
 		Config:    *cfg,

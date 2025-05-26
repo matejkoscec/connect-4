@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"backend/message"
-	"context"
+	"backend/websockets"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +10,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"time"
 )
 
 func (h *Handler) PlayGame(c echo.Context) error {
@@ -32,37 +31,36 @@ func (h *Handler) PlayGame(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	readResults := make(chan ReadResult, 1)
-	go startReader(c, ws, readResults)
-	writeResults := make(chan error, 1)
-	writeRequests := make(chan WriteRequest)
-	defer close(writeRequests)
-	go startWriter(c, ws, writeResults, writeRequests)
+	client := h.GameCache.Join(claims.UserID, ws)
+	defer h.GameCache.Leave(claims.UserID)
 
-	writeRequests <- WriteRequest{
+	readResults := make(chan websockets.ReadResult, 1)
+	go websockets.StartReader(c, ws, readResults)
+	writeResults := make(chan error, 1)
+	writeRequests := client.WriteRequests
+	go websockets.StartWriter(c, ws, writeResults, writeRequests)
+
+	writeRequests <- websockets.WriteRequest{
 		MsgType: message.TypeWaitingForGame,
 		Payload: message.WaitingForGamePayload{},
 	}
-
-	client := h.GameCache.Join(claims.UserID, ws)
-	defer h.GameCache.Leave(claims.UserID)
 
 	var lobbyId uuid.UUID
 findLobby:
 	for {
 		select {
 		case rr := <-readResults:
-			if rr.err != nil {
-				return rr.err
+			if rr.Err != nil {
+				return rr.Err
 			}
-			c.Logger().Infof("Read message %v", rr.msg)
+			c.Logger().Infof("Read message %v", rr.Msg)
 		case wrErr := <-writeResults:
 			if wrErr != nil {
 				return wrErr
 			}
-			panic("should not happen")
-		case lobbyId = <-client.ReceiveLobbyId():
-			writeRequests <- WriteRequest{
+			c.Logger().Info("Written message")
+		case lobbyId = <-client.Notify:
+			writeRequests <- websockets.WriteRequest{
 				MsgType: message.TypeFoundGame,
 				Payload: message.FoundGamePayload{LobbyId: lobbyId.String()},
 			}
@@ -72,44 +70,87 @@ findLobby:
 		}
 	}
 
+	playerInfo := h.GameCache.PlayerInfo(lobbyId, claims.UserID)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 
 		case rr := <-readResults:
-			if rr.err != nil {
+			if rr.Err != nil {
 				var msgErr message.Error
-				isMsgErr := errors.As(rr.err, &msgErr)
+				isMsgErr := errors.As(rr.Err, &msgErr)
 				if !isMsgErr {
-					return rr.err
+					return rr.Err
 				}
-				writeRequests <- WriteRequest{
+				writeRequests <- websockets.WriteRequest{
 					MsgType: message.TypeError, Payload: message.ErrorPayload{
 						Code:           websocket.StatusUnsupportedData,
 						Err:            msgErr.Error(),
-						ProblematicMsg: rr.msg,
+						ProblematicMsg: rr.Msg,
 					},
 				}
 				break
 			}
 
-			switch rr.msg.Type {
-			case message.TypeChatMessage:
+			switch rr.Msg.Type {
+			case message.TypeChat:
 				var chatMsg message.ChatMessagePayload
-				err = json.Unmarshal(rr.msg.Payload, &chatMsg)
+				err = json.Unmarshal(rr.Msg.Payload, &chatMsg)
 				if err != nil {
 					return err
 				}
-				h.GameCache.Send(lobbyId, chatMsg.Text)
+				h.GameCache.Send(
+					lobbyId, websockets.WriteRequest{
+						MsgType: rr.Msg.Type,
+						Payload: rr.Msg.Payload,
+					},
+				)
+
+			case message.TypePlayMove:
+				var moveMsg message.PlayMovePayload
+				err = json.Unmarshal(rr.Msg.Payload, &moveMsg)
+				if err != nil {
+					return err
+				}
+				isWinningMove, err := h.GameCache.Play(lobbyId, claims.UserID, moveMsg.Column)
+				if err != nil {
+					writeRequests <- websockets.WriteRequest{
+						MsgType: message.TypeError, Payload: message.ErrorPayload{
+							Code:           websocket.StatusUnsupportedData,
+							Err:            err.Error(),
+							ProblematicMsg: rr.Msg,
+						},
+					}
+					break
+				}
+
+				writeRequests <- websockets.WriteRequest{
+					MsgType: message.TypePlayedMove,
+					Payload: message.PlayedMovePayload{
+						Color:  playerInfo.Color,
+						Column: moveMsg.Column,
+					},
+				}
+
+				if isWinningMove {
+					h.GameCache.Send(
+						lobbyId, websockets.WriteRequest{
+							MsgType: message.TypeGameOver,
+							Payload: message.GameOverPayload{Winner: playerInfo.Color},
+						},
+					)
+				}
+
 			default:
-				errStr := fmt.Sprintf("Unknown message type '%s'", rr.msg.Type)
+				errStr := fmt.Sprintf("Unknown message type '%s'", rr.Msg.Type)
 				c.Logger().Info(errStr)
-				writeRequests <- WriteRequest{
+				writeRequests <- websockets.WriteRequest{
 					MsgType: message.TypeError, Payload: message.ErrorPayload{
 						Code:           websocket.StatusUnsupportedData,
 						Err:            errStr,
-						ProblematicMsg: rr.msg,
+						ProblematicMsg: rr.Msg,
 					},
 				}
 			}
@@ -119,104 +160,8 @@ findLobby:
 				return wrErr
 			}
 
-		case msg := <-client.ReceiveMsg():
-			writeRequests <- WriteRequest{
-				MsgType: message.TypeChatMessage,
-				Payload: message.ChatMessagePayload{
-					From: "",
-					Text: string(msg),
-				},
-			}
+		case <-client.Unregister:
+			return nil
 		}
 	}
-}
-
-type ReadRequest struct {
-	IgnoreTimeout bool
-}
-
-type ReadResult struct {
-	msg message.Message
-	err error
-}
-
-func startReader(c echo.Context, ws *websocket.Conn, readResults chan<- ReadResult) {
-	ctx := c.Request().Context()
-	defer close(readResults)
-	for {
-		select {
-		case <-ctx.Done():
-			readResults <- ReadResult{message.Nil, ctx.Err()}
-			return
-		default:
-			msg, err := read(ctx, ws)
-			if err != nil {
-				readResults <- ReadResult{message.Nil, err}
-				return
-			}
-			readResults <- ReadResult{msg, err}
-		}
-	}
-}
-
-func read(ctx context.Context, ws *websocket.Conn) (message.Message, error) {
-	_, r, err := ws.Reader(ctx)
-	if err != nil {
-		return message.Nil, err
-	}
-	msg, err := message.JsonDecodeBaseMsg(json.NewDecoder(r))
-	if err != nil {
-		return message.Nil, err
-	}
-
-	return msg, nil
-}
-
-type WriteRequest struct {
-	MsgType string
-	Payload any
-	Timeout time.Duration
-}
-
-func startWriter(c echo.Context, ws *websocket.Conn, writeResults chan<- error, writeRequests <-chan WriteRequest) {
-	ctx := c.Request().Context()
-	defer close(writeResults)
-	for {
-		select {
-		case <-ctx.Done():
-			writeResults <- ctx.Err()
-			return
-		case wr := <-writeRequests:
-			err := writeTimeout(ctx, ws, wr)
-			writeResults <- err
-			if err != nil {
-				return
-			}
-		}
-	}
-}
-
-func writeTimeout(ctx context.Context, ws *websocket.Conn, wr WriteRequest) error {
-	timeout := wr.Timeout
-	if timeout <= 0 {
-		timeout = time.Second
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	msg, err := message.NewV1(wr.MsgType, wr.Payload)
-	if err != nil {
-		return err
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-
-	err = ws.Write(ctx, websocket.MessageText, data)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
