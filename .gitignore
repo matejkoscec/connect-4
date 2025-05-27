@@ -18,3 +18,5 @@ HELP.md
 backend/generated
 
 cli/fiddle
+
+.DS_Store
