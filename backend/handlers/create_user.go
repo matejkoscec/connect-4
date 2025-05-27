@@ -15,10 +15,6 @@ type CreateUserRequest struct {
 	Password string `json:"password,omitempty" validate:"required"`
 }
 
-type CreateUserResponse struct {
-	Id string `json:"id"`
-}
-
 func (h *Handler) CreateUser(c echo.Context) error {
 	var request CreateUserRequest
 	if err := c.Bind(&request); err != nil {
@@ -28,10 +24,12 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		return err
 	}
 
-	_, notFound := h.DB.GetUserByUsernameOrEmail(c.Request().Context(), sqlc.GetUserByUsernameOrEmailParams{
-		Username: request.Username,
-		Email:    request.Email,
-	})
+	_, notFound := h.DB.GetUserByUsernameOrEmail(
+		c.Request().Context(), sqlc.GetUserByUsernameOrEmailParams{
+			Username: request.Username,
+			Email:    request.Email,
+		},
+	)
 	if notFound == nil {
 		return echo.NewHTTPError(http.StatusConflict, "user with that username or email already exists")
 	}
@@ -46,18 +44,20 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		return err
 	}
 
-	err = h.DB.CreateUser(c.Request().Context(), sqlc.CreateUserParams{
-		ID:           id,
-		Username:     request.Username,
-		Email:        request.Email,
-		Password:     password,
-		CreatedAtUtc: time.Now().UTC(),
-	})
+	err = h.DB.CreateUser(
+		c.Request().Context(), sqlc.CreateUserParams{
+			ID:           id,
+			Username:     request.Username,
+			Email:        request.Email,
+			Password:     password,
+			CreatedAtUtc: time.Now().UTC(),
+		},
+	)
 	if err != nil {
 		return err
 	}
 
 	c.Logger().Infof("added new user: %v", request.Username)
 
-	return c.JSON(http.StatusCreated, CreateUserResponse{id.String()})
+	return c.NoContent(http.StatusCreated)
 }

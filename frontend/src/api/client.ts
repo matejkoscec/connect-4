@@ -15,6 +15,13 @@ export class FetchClient {
       });
 
       if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData && errorData.message) {
+          const error = new Error(errorData.message);
+          (error as any).data = errorData;
+          throw error;
+        }
+
         throw new Error(
           `HTTP Error: ${response.status} ${response.statusText}`
         );
@@ -23,10 +30,13 @@ export class FetchClient {
       try {
         return await response.json();
       } catch (jsonError) {
-        throw new Error("Failed to parse JSON response");
+        return {} as T;
       }
     } catch (error) {
-      throw new Error(`Fetch error: ${(error as Error).message}`);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Fetch error: ${String(error)}`);
     }
   }
 }
