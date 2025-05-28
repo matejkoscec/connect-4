@@ -47,9 +47,10 @@ func run(e *echo.Echo) error {
 	}
 	defer dbpool.Close()
 
-	gameCache := cache.NewDefaultCache()
+	queries := sqlc.New(dbpool)
+	gameCache := cache.NewDefaultCache(queries, dbpool)
 	h := &handlers.Handler{
-		DB:        sqlc.New(dbpool),
+		DB:        queries,
 		Config:    *cfg,
 		Conn:      dbpool,
 		GameCache: gameCache,

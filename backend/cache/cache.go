@@ -2,12 +2,14 @@ package cache
 
 import (
 	"backend/game"
+	"backend/generated/sqlc"
 	"backend/message"
 	"backend/websockets"
 	"context"
 	"encoding/json"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"sync"
 	"time"
 )
@@ -18,15 +20,18 @@ type Cache struct {
 	readyPlayersQ chan uuid.UUID
 	idleLobbies   map[uuid.UUID]*Lobby
 	inGameLobbies map[uuid.UUID]*Lobby
+	db            *sqlc.Queries
+	conn          *pgxpool.Pool
 }
 
 type Lobby struct {
-	Id        uuid.UUID
-	players   map[uuid.UUID]PlayerInfo
-	broadcast chan websockets.WriteRequest
-	Game      *game.Game
-	moves     chan game.Move
-	Messages  []message.ChatMessagePayload
+	Id           uuid.UUID
+	players      map[uuid.UUID]PlayerInfo
+	broadcast    chan websockets.WriteRequest
+	Game         *game.Game
+	moves        chan game.Move
+	Messages     []message.ChatMessagePayload
+	CreatedAtUtc time.Time
 }
 
 type PlayerInfo struct {
@@ -44,12 +49,13 @@ func NewLobby() (*Lobby, error) {
 	}
 
 	return &Lobby{
-		Id:        lobbyId,
-		players:   make(map[uuid.UUID]PlayerInfo),
-		broadcast: make(chan websockets.WriteRequest),
-		Game:      g,
-		moves:     make(chan game.Move),
-		Messages:  make([]message.ChatMessagePayload, 0),
+		Id:           lobbyId,
+		players:      make(map[uuid.UUID]PlayerInfo),
+		broadcast:    make(chan websockets.WriteRequest),
+		Game:         g,
+		moves:        make(chan game.Move),
+		Messages:     make([]message.ChatMessagePayload, 0),
+		CreatedAtUtc: time.Now().UTC(),
 	}, nil
 }
 
@@ -71,12 +77,15 @@ func NewClient(playerId uuid.UUID, ws *websocket.Conn) *Client {
 	}
 }
 
-func NewDefaultCache() *Cache {
+func NewDefaultCache(db *sqlc.Queries, conn *pgxpool.Pool) *Cache {
 	return &Cache{
+		mutex:         sync.RWMutex{},
 		connections:   make(map[uuid.UUID]*Client),
 		readyPlayersQ: make(chan uuid.UUID, 100),
 		idleLobbies:   make(map[uuid.UUID]*Lobby),
 		inGameLobbies: make(map[uuid.UUID]*Lobby),
+		db:            db,
+		conn:          conn,
 	}
 }
 
@@ -172,6 +181,7 @@ func (gc *Cache) Play(lobbyId uuid.UUID, playerId uuid.UUID, column uint8) (int,
 
 func (gc *Cache) startGame(ctx context.Context, lobbyId uuid.UUID) {
 	lobby := gc.inGameLobbies[lobbyId]
+	startedAtUtc := time.Now().UTC()
 	for {
 		select {
 		case <-ctx.Done():
@@ -192,6 +202,30 @@ func (gc *Cache) startGame(ctx context.Context, lobbyId uuid.UUID) {
 			}
 			if wr.MsgType == message.TypeGameOver {
 				delete(gc.inGameLobbies, lobbyId)
+				players := [2]uuid.UUID{}
+				i := 0
+				for pId := range lobby.players {
+					players[i] = pId
+					i++
+				}
+				now := time.Now().UTC()
+				_ = gc.db.CreateLobby(
+					ctx, sqlc.CreateLobbyParams{
+						ID:           lobbyId,
+						Player1ID:    players[0],
+						Player2ID:    players[1],
+						CreatedAtUtc: lobby.CreatedAtUtc,
+					},
+				)
+				_ = gc.db.CreateGame(
+					ctx, sqlc.CreateGameParams{
+						ID:           lobby.Game.Id,
+						LobbyID:      lobbyId,
+						StartedAtUtc: &startedAtUtc,
+						EndedAtUtc:   &now,
+						State:        lobby.Game.State.StrState(),
+					},
+				)
 			}
 			if wr.MsgType == message.TypeChat {
 				var msg message.ChatMessagePayload

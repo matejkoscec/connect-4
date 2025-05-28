@@ -34,6 +34,16 @@ type Game struct {
 
 type Board [Rows][Cols]Color
 
+func (b *Board) StrState() string {
+	state := ""
+	for i := 0; i < Rows; i++ {
+		for j := 0; j < Cols; j++ {
+			state += fmt.Sprint(b[i][j])
+		}
+	}
+	return state
+}
+
 func New() (*Game, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
