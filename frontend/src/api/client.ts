@@ -1,3 +1,5 @@
+import paths from "./paths";
+
 export class FetchClient {
   baseURL: string;
 
@@ -40,3 +42,5 @@ export class FetchClient {
     }
   }
 }
+export const client = new FetchClient(`http://localhost:8080${paths.base}`);
+

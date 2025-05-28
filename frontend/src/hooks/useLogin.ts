@@ -1,6 +1,6 @@
+import { client } from "@/api/client";
 import paths from "@/api/paths";
 import { useAuth } from "@/contexts/AuthContext";
-import { client } from "@/routes/__root";
 import { useMutation } from "@tanstack/react-query";
 
 export type LoginUserRequest = {

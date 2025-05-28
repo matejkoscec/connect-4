@@ -1,5 +1,5 @@
+import { client } from "@/api/client";
 import paths from "@/api/paths";
-import { client } from "@/routes/__root";
 import { useMutation } from "@tanstack/react-query";
 
 export type RegisterUserRequest = {
