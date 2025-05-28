@@ -5,7 +5,7 @@ import (
 	"backend/message"
 	"backend/websockets"
 	"context"
-	"fmt"
+	"encoding/json"
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"sync"
@@ -21,11 +21,12 @@ type Cache struct {
 }
 
 type Lobby struct {
-	id        uuid.UUID
+	Id        uuid.UUID
 	players   map[uuid.UUID]PlayerInfo
 	broadcast chan websockets.WriteRequest
-	game      *game.Game
+	Game      *game.Game
 	moves     chan game.Move
+	Messages  []message.ChatMessagePayload
 }
 
 type PlayerInfo struct {
@@ -43,18 +44,19 @@ func NewLobby() (*Lobby, error) {
 	}
 
 	return &Lobby{
-		id:        lobbyId,
+		Id:        lobbyId,
 		players:   make(map[uuid.UUID]PlayerInfo),
 		broadcast: make(chan websockets.WriteRequest),
-		game:      g,
+		Game:      g,
 		moves:     make(chan game.Move),
+		Messages:  make([]message.ChatMessagePayload, 0),
 	}, nil
 }
 
 type Client struct {
 	Id            uuid.UUID
 	Socket        *websocket.Conn
-	Notify        chan uuid.UUID
+	Notify        chan *Lobby
 	WriteRequests chan websockets.WriteRequest
 	Unregister    chan struct{}
 }
@@ -63,7 +65,7 @@ func NewClient(playerId uuid.UUID, ws *websocket.Conn) *Client {
 	return &Client{
 		Id:            playerId,
 		Socket:        ws,
-		Notify:        make(chan uuid.UUID, 1),
+		Notify:        make(chan *Lobby, 1),
 		WriteRequests: make(chan websockets.WriteRequest),
 		Unregister:    make(chan struct{}),
 	}
@@ -83,7 +85,7 @@ func (gc *Cache) RunMatchmaking(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-	gc.idleLobbies[lobby.id] = lobby
+	gc.idleLobbies[lobby.Id] = lobby
 
 	for {
 		select {
@@ -102,20 +104,20 @@ func (gc *Cache) RunMatchmaking(ctx context.Context) {
 				continue
 			}
 
-			delete(gc.idleLobbies, lobby.id)
-			gc.inGameLobbies[lobby.id] = lobby
+			go gc.startGame(ctx, lobby.Id)
+
+			delete(gc.idleLobbies, lobby.Id)
+			gc.inGameLobbies[lobby.Id] = lobby
 			for pId := range lobby.players {
-				gc.connections[pId].Notify <- lobby.id
+				gc.connections[pId].Notify <- lobby
 			}
 			gc.mutex.RUnlock()
-
-			gc.startGame(ctx, lobby.id)
 
 			lobby, err = NewLobby()
 			if err != nil {
 				panic(err)
 			}
-			gc.idleLobbies[lobby.id] = lobby
+			gc.idleLobbies[lobby.Id] = lobby
 		}
 	}
 }
@@ -126,10 +128,10 @@ func (gc *Cache) Join(playerId uuid.UUID, ws *websocket.Conn) *Client {
 	gc.connections[playerId] = c
 	gc.mutex.Unlock()
 
-	for lobbyId, lobby := range gc.inGameLobbies {
+	for _, lobby := range gc.inGameLobbies {
 		for pId := range lobby.players {
 			if playerId == pId {
-				c.Notify <- lobbyId
+				c.Notify <- lobby
 				return c
 			}
 		}
@@ -146,27 +148,26 @@ func (gc *Cache) PlayerInfo(lobbyId uuid.UUID, playerId uuid.UUID) PlayerInfo {
 
 func (gc *Cache) Leave(playerId uuid.UUID) {
 	gc.mutex.Lock()
+	defer gc.mutex.Unlock()
 	if client, exists := gc.connections[playerId]; exists {
 		close(client.Notify)
 		close(client.WriteRequests)
 	}
 
 	delete(gc.connections, playerId)
-	fmt.Printf("connections: %+v\nin game: %+v\n", gc.connections, gc.inGameLobbies)
-	gc.mutex.Unlock()
 }
 
 func (gc *Cache) Send(lobbyId uuid.UUID, wr websockets.WriteRequest) {
 	gc.inGameLobbies[lobbyId].broadcast <- wr
 }
 
-func (gc *Cache) Play(lobbyId uuid.UUID, playerId uuid.UUID, column uint8) (bool, error) {
+func (gc *Cache) Play(lobbyId uuid.UUID, playerId uuid.UUID, column uint8) (int, bool, error) {
 	lobby := gc.inGameLobbies[lobbyId]
 	move := game.Move{
 		Column: column,
 		Color:  lobby.players[playerId].Color,
 	}
-	return lobby.game.Make(move)
+	return lobby.Game.Make(move)
 }
 
 func (gc *Cache) startGame(ctx context.Context, lobbyId uuid.UUID) {
@@ -191,6 +192,11 @@ func (gc *Cache) startGame(ctx context.Context, lobbyId uuid.UUID) {
 			}
 			if wr.MsgType == message.TypeGameOver {
 				delete(gc.inGameLobbies, lobbyId)
+			}
+			if wr.MsgType == message.TypeChat {
+				var msg message.ChatMessagePayload
+				_ = json.Unmarshal(wr.Payload.(json.RawMessage), &msg)
+				lobby.Messages = append(lobby.Messages, msg)
 			}
 		}
 	}

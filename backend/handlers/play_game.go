@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"backend/cache"
+	"backend/game"
 	"backend/message"
 	"backend/websockets"
 	"encoding/json"
@@ -8,7 +10,6 @@ import (
 	"fmt"
 	"github.com/coder/websocket"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -17,6 +18,7 @@ func (h *Handler) PlayGame(c echo.Context) error {
 		c.Response(), c.Request(), &websocket.AcceptOptions{
 			Subprotocols:    message.Subprotocols,
 			CompressionMode: websocket.CompressionDisabled,
+			OriginPatterns:  []string{"*"},
 		},
 	)
 	if err != nil {
@@ -45,7 +47,7 @@ func (h *Handler) PlayGame(c echo.Context) error {
 		Payload: message.WaitingForGamePayload{},
 	}
 
-	var lobbyId uuid.UUID
+	var lobby *cache.Lobby
 findLobby:
 	for {
 		select {
@@ -59,18 +61,29 @@ findLobby:
 				return wrErr
 			}
 			c.Logger().Info("Written message")
-		case lobbyId = <-client.Notify:
-			writeRequests <- websockets.WriteRequest{
-				MsgType: message.TypeFoundGame,
-				Payload: message.FoundGamePayload{LobbyId: lobbyId.String()},
-			}
+		case lobby = <-client.Notify:
 			break findLobby
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
 
-	playerInfo := h.GameCache.PlayerInfo(lobbyId, claims.UserID)
+	playerInfo := h.GameCache.PlayerInfo(lobby.Id, claims.UserID)
+	lastPlayed := game.ColorNone
+	if len(lobby.Game.Moves) > 0 {
+		lp := lobby.Game.Moves[len(lobby.Game.Moves)-1]
+		lastPlayed = lp.Color
+	}
+	writeRequests <- websockets.WriteRequest{
+		MsgType: message.TypeFoundGame,
+		Payload: message.FoundGamePayload{
+			LobbyId:    lobby.Id.String(),
+			State:      *lobby.Game.State,
+			LastPlayed: lastPlayed,
+			Color:      playerInfo.Color,
+			Messages:   lobby.Messages,
+		},
+	}
 
 	for {
 		select {
@@ -102,7 +115,7 @@ findLobby:
 					return err
 				}
 				h.GameCache.Send(
-					lobbyId, websockets.WriteRequest{
+					lobby.Id, websockets.WriteRequest{
 						MsgType: rr.Msg.Type,
 						Payload: rr.Msg.Payload,
 					},
@@ -114,7 +127,7 @@ findLobby:
 				if err != nil {
 					return err
 				}
-				isWinningMove, err := h.GameCache.Play(lobbyId, claims.UserID, moveMsg.Column)
+				row, isWinningMove, err := h.GameCache.Play(lobby.Id, claims.UserID, moveMsg.Column)
 				if err != nil {
 					writeRequests <- websockets.WriteRequest{
 						MsgType: message.TypeError, Payload: message.ErrorPayload{
@@ -126,17 +139,22 @@ findLobby:
 					break
 				}
 
-				writeRequests <- websockets.WriteRequest{
-					MsgType: message.TypePlayedMove,
-					Payload: message.PlayedMovePayload{
-						Color:  playerInfo.Color,
-						Column: moveMsg.Column,
+				h.GameCache.Send(
+					lobby.Id,
+					websockets.WriteRequest{
+						MsgType: message.TypePlayedMove,
+						Payload: message.PlayedMovePayload{
+							Color:  playerInfo.Color,
+							Row:    uint8(row),
+							Column: moveMsg.Column,
+						},
 					},
-				}
+				)
 
 				if isWinningMove {
 					h.GameCache.Send(
-						lobbyId, websockets.WriteRequest{
+						lobby.Id,
+						websockets.WriteRequest{
 							MsgType: message.TypeGameOver,
 							Payload: message.GameOverPayload{Winner: playerInfo.Color},
 						},

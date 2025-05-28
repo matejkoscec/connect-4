@@ -5,9 +5,10 @@ import (
 	"backend/config"
 	"backend/generated/sqlc"
 	"context"
+	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo-jwt/v4"
+	echojwt "github.com/labstack/echo-jwt/v4"
 	"github.com/labstack/echo/v4"
 	"net/http"
 )
@@ -21,9 +22,11 @@ type Handler struct {
 }
 
 func ConfigureRoutes(h *Handler, e *echo.Echo) {
-	e.GET("/health", func(c echo.Context) error {
-		return c.NoContent(http.StatusOK)
-	})
+	e.GET(
+		"/health", func(c echo.Context) error {
+			return c.NoContent(http.StatusOK)
+		},
+	)
 
 	apiV1 := e.Group("/api/v1")
 
@@ -31,13 +34,26 @@ func ConfigureRoutes(h *Handler, e *echo.Echo) {
 	auth.POST("/register", h.CreateUser)
 	auth.POST("/login", h.LoginUser)
 
-	jwtMiddleware := echojwt.WithConfig(echojwt.Config{
-		SigningKey: []byte(h.Config.App.Security.JwtSecret),
-		NewClaimsFunc: func(c echo.Context) jwt.Claims {
-			return new(UserClaims)
+	jwtMiddleware := echojwt.WithConfig(
+		echojwt.Config{
+			SigningKey: []byte(h.Config.App.Security.JwtSecret),
+			NewClaimsFunc: func(c echo.Context) jwt.Claims {
+				return new(UserClaims)
+			},
 		},
-	})
+	)
 
-	games := apiV1.Group("/games", jwtMiddleware)
-	games.GET("/play/ws", h.PlayGame)
+	games := apiV1.Group("/games")
+	games.GET(
+		"/play",
+		h.PlayGame,
+		func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				token := c.QueryParam("token")
+				c.Request().Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+				return next(c)
+			}
+		},
+		jwtMiddleware,
+	)
 }

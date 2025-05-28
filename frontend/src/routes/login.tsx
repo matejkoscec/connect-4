@@ -33,14 +33,14 @@ function RouteComponent() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate({ to: "/" });
+      navigate({ to: "/games" });
     }
   }, [isAuthenticated, navigate]);
 
   const onSubmit = (data: LoginUserRequest) => {
     loginUser(data, {
       onSuccess: () => {
-        navigate({ to: "/" });
+        navigate({ to: "/games" });
       },
     });
   };

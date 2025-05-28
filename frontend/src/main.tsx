@@ -1,11 +1,25 @@
 import "@/index.css";
-import { RouterProvider, createRouter } from "@tanstack/react-router";
-import { StrictMode } from "react";
+import {
+  RouterProvider,
+  createRouter,
+  useNavigate,
+} from "@tanstack/react-router";
+import { StrictMode, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 
 import { routeTree } from "./routeTree.gen";
 
-const router = createRouter({ routeTree });
+const router = createRouter({
+  routeTree,
+  defaultNotFoundComponent: () => {
+    const navigate = useNavigate();
+    useEffect(() => {
+      navigate({ to: "/login", replace: true });
+    }, [navigate]);
+
+    return <></>;
+  },
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

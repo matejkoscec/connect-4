@@ -57,30 +57,26 @@ func New() (*Game, error) {
 	}, nil
 }
 
-func (g *Game) Make(move Move) (bool, error) {
+func (g *Game) Make(move Move) (int, bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	board := g.State
 	lastI := Rows - 1
 	if len(g.Moves) == 0 {
 		if move.Color == ColorYellow {
-			return false, fmt.Errorf("not %d turn", move.Color)
+			return lastI, false, fmt.Errorf("not %d turn", move.Color)
 		}
 		board[lastI][move.Column] = move.Color
 		g.Moves = append(g.Moves, move)
-		for _, row := range board {
-			fmt.Println(row)
-		}
-		fmt.Println()
-		return false, nil
+		return lastI, false, nil
 	}
 
 	lastMove := g.Moves[len(g.Moves)-1]
 	if move.Color == lastMove.Color {
-		return false, fmt.Errorf("not %d turn", move.Color)
+		return 0, false, fmt.Errorf("not %d turn", move.Color)
 	}
 	if board[0][move.Column] != ColorNone {
-		return false, fmt.Errorf("column %d is full", move.Column)
+		return 0, false, fmt.Errorf("column %d is full", move.Column)
 	}
 
 	for board[lastI][move.Column] != ColorNone {
@@ -89,81 +85,56 @@ func (g *Game) Make(move Move) (bool, error) {
 	board[lastI][move.Column] = move.Color
 	g.Moves = append(g.Moves, move)
 
-	for _, row := range board {
-		fmt.Println(row)
-	}
-	fmt.Println()
-
-	return isWinningMove(board, lastI, move), nil
+	return lastI, isWinningMove(board, lastI, move), nil
 }
 
 func isWinningMove(board *Board, lastI int, move Move) bool {
+	color := move.Color
+	col := int(move.Column)
 	row := lastI
-	col := move.Column
-	playerColor := move.Color
 
-	for startCol := col - 3; startCol <= col; startCol++ {
-		if startCol < 0 {
-			continue
-		}
-		if startCol+3 >= Cols {
-			continue
-		}
-
-		if board[row][startCol] == playerColor &&
-			board[row][startCol+1] == playerColor &&
-			board[row][startCol+2] == playerColor &&
-			board[row][startCol+3] == playerColor {
-			return true
-		}
+	hCount := 1
+	for c := col - 1; c >= 0 && board[row][c] == color; c-- {
+		hCount++
 	}
 
-	count := 0
-	for i := row; i < Rows; i++ {
-		if board[i][col] == playerColor {
-			count++
-		} else {
-			break
-		}
+	for c := col + 1; c < Cols && board[row][c] == color; c++ {
+		hCount++
 	}
-	if count >= 4 {
+	if hCount >= 4 {
 		return true
 	}
 
-	r, c := row, col
-	for r > 0 && c > 0 {
-		r--
-		c--
+	vCount := 1
+	for r := row + 1; r < Rows && board[r][col] == color; r++ {
+		vCount++
+	}
+	if vCount >= 4 {
+		return true
 	}
 
-	count = 0
-	for i, j := r, c; i < Rows && j < Cols; i, j = i+1, j+1 {
-		if board[i][j] == playerColor {
-			count++
-			if count >= 4 {
-				return true
-			}
-		} else {
-			count = 0
-		}
+	d1Count := 1
+	for r, c := row-1, col+1; r >= 0 && c < Cols && board[r][c] == color; r, c = r-1, c+1 {
+		d1Count++
 	}
 
-	r, c = row, col
-	for r > 0 && c < Cols-1 {
-		r--
-		c++
+	for r, c := row+1, col-1; r < Rows && c >= 0 && board[r][c] == color; r, c = r+1, c-1 {
+		d1Count++
+	}
+	if d1Count >= 4 {
+		return true
 	}
 
-	count = 0
-	for i, j := r, c; i < Rows; i, j = i+1, j-1 {
-		if board[i][j] == playerColor {
-			count++
-			if count >= 4 {
-				return true
-			}
-		} else {
-			count = 0
-		}
+	d2Count := 1
+	for r, c := row-1, col-1; r >= 0 && c >= 0 && board[r][c] == color; r, c = r-1, c-1 {
+		d2Count++
+	}
+
+	for r, c := row+1, col+1; r < Rows && c < Cols && board[r][c] == color; r, c = r+1, c+1 {
+		d2Count++
+	}
+	if d2Count >= 4 {
+		return true
 	}
 
 	return false

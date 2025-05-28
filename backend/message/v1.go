@@ -78,7 +78,11 @@ type WaitingForGamePayload struct{}
 const TypeFoundGame = "foundGame"
 
 type FoundGamePayload struct {
-	LobbyId string `json:"lobbyId"`
+	LobbyId    string               `json:"lobbyId"`
+	State      game.Board           `json:"state"`
+	LastPlayed game.Color           `json:"lastPlayed"`
+	Messages   []ChatMessagePayload `json:"messages"`
+	Color      game.Color           `json:"color"`
 }
 
 const TypeChat = "chatMessage"
@@ -91,18 +95,19 @@ type ChatMessagePayload struct {
 const TypePlayMove = "playMove"
 
 type PlayMovePayload struct {
-	Column uint8
+	Column uint8 `json:"column"`
 }
 
 const TypePlayedMove = "playedMove"
 
 type PlayedMovePayload struct {
-	Color  game.Color
-	Column uint8
+	Color  game.Color `json:"color"`
+	Row    uint8      `json:"row"`
+	Column uint8      `json:"column"`
 }
 
 const TypeGameOver = "gameOver"
 
 type GameOverPayload struct {
-	Winner game.Color
+	Winner game.Color `json:"winner"`
 }
