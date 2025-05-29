@@ -1,8 +1,13 @@
-import { AuthProvider, useAuth } from "@/contexts/AuthContext"; // Import useAuth
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createRootRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  Link,
+  Outlet,
+  useNavigate,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { PowerCircle, User } from "lucide-react"; // Import a user icon
+import { PowerCircle, User } from "lucide-react";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -13,12 +18,17 @@ const queryClient = new QueryClient({
 });
 
 function HeaderComponent() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   return (
     <header className="bg-gray-800 text-white p-4 flex justify-between items-center shadow-md">
-      <div className="text-xl font-bold">Connect 4</div>
+      <Link
+        to={isAuthenticated ? "/games" : "/login"}
+        className="text-xl font-bold"
+      >
+        Connect 4
+      </Link>
       <div className="flex items-center space-x-2">
         {user && (
           <>

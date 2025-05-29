@@ -39,7 +39,7 @@ function RouteComponent() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate({ to: "/" });
+      navigate({ to: "/games" });
     }
   }, [isAuthenticated, navigate]);
 
